@@ -251,11 +251,11 @@ class Row():
 class AnimatedDisplay(ManagedDisplay):
     def __init__(self,*args,**kwargs):
         super().__init__(*args,**kwargs)
-        self.rows = [Row(i) for i in range(ROWS)] 
+        self.rows = [Row(i) for i in range(ROWS)]
+        self.paused_event = threading.Event()
         self.thread = threading.Thread(target=self._animateRows)
         self.thread.daemon = True
         self.thread.start()
-        self.paused_event = threading.Event()
 
     def _animateRows(self):
         while True:
@@ -296,15 +296,18 @@ class AnimatedDisplay(ManagedDisplay):
         self.insert(row,0,self.rows[row].contents,True)
         self.rows[row].enabled = True
 
-    def stopRow(self,row):
+    def stopRow(self,row,clear=False):
         self.rows[row].enabled = False
         self.paused_event.clear()
         self.paused_event.wait()
-        self.insert(row,0,self.rows[row].contents,True)
+        if clear:
+            self.insert(row,0,"",True)
+        else:
+            self.insert(row,0,self.rows[row].contents,True)
 
     def cleanup(self,*args,**kwargs):
         for i in range(ROWS):
-            self.stopRow(i)
+            self.stopRow(i,True)
         super().cleanup(*args,**kwargs)
 
 if __name__ == "__main__":
