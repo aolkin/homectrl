@@ -14,8 +14,10 @@
 import RPi.GPIO as gpio
 import time, threading
 
-def delay(ms):
-    time.sleep(ms/1000000)
+try:
+    from .component import Component, delay
+except ValueError:
+    from component import Component, delay
 
 RS = 18 # 24
 EN = 22 # 25
@@ -35,7 +37,7 @@ SHIFT_MASK = 0b00010000
 RIGHT = 0b0100
 LEFT  = 0b0000
 
-class Display:
+class Display(Component):
     def __init__(self,rs=RS,en=EN,d7=D7,d6=D6,d5=D5,d4=D4,bl=BACKLIGHT):
         self.RS = rs
         self.EN = en
@@ -45,18 +47,10 @@ class Display:
         self.D4 = d4
         self.BACKLIGHT = bl
         self.data_pins = (d7, d6, d5, d4)
-        self.all_pins = (rs, en, bl) + self.data_pins
-
-        self.__initialized = False
+        super().__init__((rs, en, bl) + self.data_pins)
 
         self.__mode = 0b000
         self.__lit = False
-
-    def __checkInit(self,quiet=False):
-        if quiet:
-            return self.__initialized
-        if not self.__initialized:
-            raise RuntimeError("The Display has not been initialized yet!")
 
     @property
     def lit(self):
@@ -67,7 +61,7 @@ class Display:
         if (not self.enabled) and state:
             self.enabled = True
         if self.__lit != state:
-            self.__checkInit()
+            self._checkInit()
             gpio.output(self.BACKLIGHT,state)
             self.__lit = state
 
@@ -120,7 +114,7 @@ class Display:
         self.__pulseEnable()
 
     def write(self,val,mode=1):
-        self.__checkInit()
+        self._checkInit()
         gpio.output(self.RS,mode)
         self.__write4(val>>4)
         self.__write4(val)
@@ -143,22 +137,13 @@ class Display:
             self.write(ord(i))
 
     def init(self,bl=False):
-        if self.__initialized:
-            try:
-                self.cleanup()
-            finally:
-                pass
-
-        gpio.setmode(gpio.BOARD)
-        
-        for ch in self.all_pins:
-            gpio.setup(ch, gpio.OUT, initial=gpio.LOW)
+        super().init(True)
 
         self.__write4(0b0011) # Set to 8 bit mode
         self.__write4(0b0011) # Again, in case in 4 bit mode
         self.__write4(0b0010) # Set to 4 bit mode in 8 bit mode
 
-        self.__initialized = True
+        self.set_init()
 
         delay(500)
         self.command(0b00101000) # Set to use max number of lines and font 0
@@ -167,18 +152,13 @@ class Display:
         self.lit = bl
 
     def cleanup(self,quiet=False):
-        if self.__checkInit(quiet):
+        if self._checkInit(quiet):
             self.enabled = False
-        self.__initialized = False
-        for ch in self.all_pins:
-            gpio.cleanup(ch)
-
+        super().cleanup()
+        
     def __enter__(self):
-        self.init(True)
+        self.init()
         return self
-
-    def __exit__(self, type, value, tb):
-        self.cleanup()
 
 ROW_ADDENDS = {0: 0, 1: 64, 2: COLS, 3: 64+COLS}
 
@@ -253,6 +233,7 @@ class AnimatedDisplay(ManagedDisplay):
         super().__init__(*args,**kwargs)
         self.rows = [Row(i) for i in range(ROWS)]
         self.paused_event = threading.Event()
+        self._loading_stopper = None
         self.thread = threading.Thread(target=self._animateRows)
         self.thread.daemon = True
         self.thread.start()
@@ -271,10 +252,13 @@ class AnimatedDisplay(ManagedDisplay):
             time.sleep(0.5)
 
     def displayLoadingAnimation(self,row=1):
+        if self._loading_stopper:
+            self._loading_stopper()
         self.insert(row,5,"Loading",True)
         event = threading.Event()
         thread = threading.Thread(target=self.__displayLoadingAnimation,args=(row,event))
         thread.daemon = True
+        self._loading_stopper = event.set
         thread.start()
         return event.set
 
@@ -289,6 +273,7 @@ class AnimatedDisplay(ManagedDisplay):
                 wait_with_event(.5,event)
         except Done:
             self.insert(row,8,"Done",True)
+            self._loading_stopper = None
 
     def animateRow(self,row,content):
         self.stopRow(row)
@@ -306,6 +291,8 @@ class AnimatedDisplay(ManagedDisplay):
             self.insert(row,0,self.rows[row].contents,True)
 
     def cleanup(self,*args,**kwargs):
+        if self._loading_stopper:
+            self._loading_stopper()
         for i in range(ROWS):
             self.stopRow(i,True)
         super().cleanup(*args,**kwargs)
