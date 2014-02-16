@@ -114,7 +114,7 @@ class HomeCtrl:
     @classmethod
     def launch(cls):
         hc = cls()
-        if sys.argv[1] == "debug":
+        if len(sys.argv) > 1:
             hc.main()
         else:
             if os.fork() == 0:
