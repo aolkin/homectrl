@@ -81,7 +81,10 @@ class HomeCtrl:
                 wifi_status = check_output(["/sbin/wpa_cli","status"],
                                            universal_newlines=True,
                                            stderr=STDOUT).replace("\n","; ")
-                self.display.animateRow(3,wifi_status)
+                if "ssid=" in wifi_status:
+                    ssid_start = wifi_status.find("; ssid")+7
+                    ssid = wifi_status[ssid_start:wifi_status.find("; ",ssid_start)]
+                self.display.animateRow(3,"Network: "+ssid)
                 self.get_sonos_players()
             except socket.error as err:
                 print(repr(err))
