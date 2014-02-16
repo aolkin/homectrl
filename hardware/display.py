@@ -206,6 +206,8 @@ class ManagedDisplay(Display):
                     if wrap:
                         col = 0
                         row += 1
+                        if row > ROWS-1:
+                            return False
                         if clear:
                             self.clearRow(row)
                         self.move(row,col)
@@ -278,6 +280,7 @@ class AnimatedDisplay(ManagedDisplay):
             time.sleep(0.25)
 
     def displayLoadingAnimation(self,row=1):
+        self.__load_error = False
         if self._loading_stopper:
             self._loading_stopper()
         self.insert(row,5,"Loading",True)
@@ -287,7 +290,8 @@ class AnimatedDisplay(ManagedDisplay):
         self._loading_stopper = event.set
         thread.start()
 
-    def stopLoadingAnimation(self):
+    def stopLoadingAnimation(self,error=False):
+        self.__load_error = error
         if self._loading_stopper:
             self._loading_stopper()
             self._done_stopping_load.wait()
@@ -304,7 +308,10 @@ class AnimatedDisplay(ManagedDisplay):
                 wait_with_event(.5,event)
         except Done:
             try:
-                self.insert(row,8,"Done",True)
+                if self.__load_error:
+                    self.insert(row,7,"Error!",True)
+                else:
+                    self.insert(row,8,"Done",True)
             except RuntimeError as err:
                 pass
             self._loading_stopper = None
@@ -318,8 +325,11 @@ class AnimatedDisplay(ManagedDisplay):
         if len(self.rows[row].contents) <= COLS:
             self.insert(row,0,self.rows[row].contents,True)
         self.rows[row].enabled = True
+        return True
 
     def stopRow(self,row,clear=False,skip_reprint=False):
+        if not self.rows[row].enabled:
+            return False
         self.rows[row].enabled = False
         if not skip_reprint:
             with self.animation_lock:
@@ -328,6 +338,7 @@ class AnimatedDisplay(ManagedDisplay):
                 else:
                     if len(self.rows[row].contents) > COLS:
                         self.insert(row,0,self.rows[row].contents[:COLS-3]+"...",True)
+        return True
 
     def stopRows(self,*rows,clear=False):
         with self.animation_lock:
@@ -339,7 +350,7 @@ class AnimatedDisplay(ManagedDisplay):
             try:
                 if self._loading_stopper:
                     self._loading_stopper()
-                self.stopRows(1,2,3,4,clear=True)
+                self.stopRows(0,1,2,3,clear=True)
             except RuntimeError as err:
                 pass # print("Warning (RuntimeError):",err,file=sys.stderr)
         super().cleanup(*args,**kwargs)

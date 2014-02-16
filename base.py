@@ -3,7 +3,9 @@
 # Base script for the controller
 #
 
-import time, os, sys, threading
+import time, os, sys, threading, socket
+
+from subprocess import check_output, STDOUT
 
 from hardware import RFReceiver, AnimatedDisplay
 
@@ -32,18 +34,20 @@ class HomeCtrl:
     def __init__(self):
         self.display = AnimatedDisplay()
         self.rf = RFReceiver()
+        self.sd = SonosDiscovery()
 
         self.players = {}
         self.current_player = -1
 
     def get_sonos_players(self):
         self.players = {}
-        sd = SonosDiscovery()
-        sonos_ips = sd.get_speaker_ips()
+        sonos_ips = self.sd.get_speaker_ips()
         for i in sonos_ips:
-            if i != "192.168.1.45":
+            try:
                 soco = SoCo(i)
                 self.players[soco.player_name] = soco
+            except Exception as err:
+                print(repr(err))
         return self.players
 
     def next_player(self,*args):
@@ -69,9 +73,24 @@ class HomeCtrl:
 
     def __main(self):
         self.display.lit = True
-        self.display.displayLoadingAnimation()
         write_custom_chars(self.display)
-        self.get_sonos_players()
+
+        while len(self.players) < 1:
+            try:
+                self.display.displayLoadingAnimation()
+                wifi_status = check_output(["/sbin/wpa_cli","status"],
+                                           universal_newlines=True,
+                                           stderr=STDOUT).replace("\n","; ")
+                self.display.animateRow(3,wifi_status)
+                self.get_sonos_players()
+            except socket.error as err:
+                print(repr(err))
+                self.display.stopLoadingAnimation(True)
+                self.display.stopRow(3,True)
+                self.display.insert(0,0,wifi_status,wrap=True)
+                time.sleep(5)
+                self.display.insert(0,0," "*20*4,wrap=True)
+
         nextbtn = self.rf.add_handler(self.next_player,0)
         self.display.stopLoadingAnimation()
         self.display.animateRow(2,"Press to change")
@@ -100,7 +119,8 @@ class HomeCtrl:
                 info = self.player.get_current_track_info()
                 status = self.player.get_current_transport_info()
                 for n, i in enumerate(("title","artist","album")):
-                    if self.current_info.get(i) != info[i]:
+                    #print(self.display.rows[n].original_contents,info[i])
+                    if self.display.rows[n].original_contents != info[i]:
                         self.display.animateRow(n,info[i])
                 if (self.current_info.get("duration") != info["duration"] or
                     self.current_info.get("position") != info["position"] or
