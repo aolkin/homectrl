@@ -144,9 +144,11 @@ class Display(Component):
         if index > 7:
             raise ValueError("CGRAM can only contain 8 characters")
         with self.lock:
-            self.command(0b01000000 & (index*8))
+            self.command(0b01000000 + index * 8)
+            delay(50)
             for i in charbytes:
                 self.write(i)
+            delay(50)
             self.command(0b10000000)
 
     def init(self,bl=False):

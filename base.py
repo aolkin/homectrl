@@ -9,12 +9,24 @@ from hardware import RFReceiver, AnimatedDisplay
 
 from soco import SoCo, SonosDiscovery
 
+PLAYING = "PLAYING"
+PAUSED  = "PAUSED_PLAYBACK"
+STOPPED = "STOPPED"
+TRANSITIONING = "TRANSITIONING"
+
 STATUS_CHARACTERS = {
-    "PLAYING": chr(0),
-    "PAUSED_PLAYBACK": chr(1),
-    "STOPPED": chr(2),
-    "TRANSITIONING": chr(3)
+    PLAYING: chr(1),
+    PAUSED: chr(2),
+    STOPPED: chr(3),
+    TRANSITIONING: chr(4)
 }
+
+def write_custom_chars(display):
+    display.writeChar(*[0x00 for i in range(8)])
+    display.writeChar(0x08,0x0c,0x0e,0x0f,0x0e,0x0c,0x08,0x00)
+    display.writeChar(0x1b,0x1b,0x1b,0x1b,0x1b,0x1b,0x1b,0x00)
+    display.writeChar(0x00,0x1f,0x1f,0x1f,0x1f,0x1f,0x00,0x00)
+    display.writeChar(0x00,0x0e,0x1f,0x1f,0x1f,0x0e,0x00,0x00)
 
 class HomeCtrl:
     def __init__(self):
@@ -44,24 +56,21 @@ class HomeCtrl:
         self.display.animateRow(1,name)
 
     def playpause(self,*args,noaction=False):
-        if getattr(self,"display_timer",None):
-            self.display_timer.cancel()
         if self.player.get_current_transport_info()["current_transport_state"] != "PLAYING":
             self.display.lit = True
             if not noaction:
                 self.player.play()
         else:
-            self.display_timer = threading.Timer(3,lambda d=self.display: setattr(d,"lit",False))
             if not noaction:
                 self.player.pause()
+
+    def __darken_display(self):
+        self.display.lit = False
 
     def __main(self):
         self.display.lit = True
         self.display.displayLoadingAnimation()
-        self.display.writeChar(0x08,0x0c,0x0e,0x0f,0x0e,0x0c,0x08,0x00)
-        self.display.writeChar(0x1b,0x1b,0x1b,0x1b,0x1b,0x1b,0x1b,0x00)
-        self.display.writeChar(0x00,0x1f,0x1f,0x1f,0x1f,0x1f,0x00,0x00)
-        self.display.writeChar(0x00,0x1f,0x1f,0x1f,0x1f,0x1f,0x00,0x00)
+        write_custom_chars(self.display)
         self.get_sonos_players()
         nextbtn = self.rf.add_handler(self.next_player,0)
         self.display.stopLoadingAnimation()
@@ -96,20 +105,31 @@ class HomeCtrl:
                 if (self.current_info.get("duration") != info["duration"] or
                     self.current_info.get("position") != info["position"] or
                     self.current_transport_state != status["current_transport_state"]):
-                    status_msg = (STATUS_CHARACTERS[status["current_transport_state"]] +
+                    status_msg = (" " + STATUS_CHARACTERS[status["current_transport_state"]] +
                                   " " + info["position"] + " / " + info["duration"])
                     self.display.animateRow(3,status_msg)
+                if self.current_transport_state != status["current_transport_state"]:
+                    if getattr(self,"display_timer",None):
+                        self.display_timer.cancel()
+                    if status["current_transport_state"] in (PAUSED,STOPPED):
+                        self.display_timer = threading.Timer(5,self.__darken_display)
+                        self.display_timer.start()
+                    else:
+                        self.display.lit = True
                 self.current_info = info
                 self.current_transport_state = status["current_transport_state"]
                 time.sleep(0.5)
             except Exception as err:
                 #print(repr(err),file=sys.stderr)
                 self.display.animateRow(3,repr(err))
-                time.sleep(5)
+                time.sleep(10)
 
     def main(self):
         with self.display, self.rf:
-            self.__main()
+            try:
+                self.__main()
+            except KeyboardInterrupt:
+                self.display.enabled = False
 
     @classmethod
     def launch(cls):
