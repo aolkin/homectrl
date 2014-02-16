@@ -12,7 +12,7 @@
 #
 
 import RPi.GPIO as gpio
-import time, threading
+import time, threading, sys
 
 try:
     from .component import Component, delay
@@ -49,8 +49,10 @@ class Display(Component):
         self.data_pins = (d7, d6, d5, d4)
         super().__init__((rs, en, bl) + self.data_pins)
 
+        self.lock = threading.RLock()
         self.__mode = 0b000
         self.__lit = False
+        self._next_custom_char = 0
 
     @property
     def lit(self):
@@ -60,19 +62,17 @@ class Display(Component):
     def lit(self,state):
         if (not self.enabled) and state:
             self.enabled = True
-        if self.__lit != state:
-            self._checkInit()
-            gpio.output(self.BACKLIGHT,state)
-            self.__lit = state
+        self._checkInit()
+        gpio.output(self.BACKLIGHT,state)
+        self.__lit = state
 
     def __changeMode(self,mask,state):
         if state:
             mode = self.__mode | mask
         else:
             mode = self.__mode & ~mask
-        if mode != self.__mode:
-            self.command(MODE_MASK | mode)
-            self.__mode = mode
+        self.command(MODE_MASK | mode)
+        self.__mode = mode
 
     @property
     def enabled(self):
@@ -114,10 +114,11 @@ class Display(Component):
         self.__pulseEnable()
 
     def write(self,val,mode=1):
-        self._checkInit()
-        gpio.output(self.RS,mode)
-        self.__write4(val>>4)
-        self.__write4(val)
+        with self.lock:
+            self._checkInit()
+            gpio.output(self.RS,mode)
+            self.__write4(val>>4)
+            self.__write4(val)
         
     def command(self,val):
         self.write(val,0)
@@ -136,25 +137,42 @@ class Display(Component):
         for i in s:
             self.write(ord(i))
 
+    def writeChar(self,*charbytes,index=None):
+        if index is None:
+            index = self._next_custom_char
+            self._next_custom_char += 1
+        if index > 7:
+            raise ValueError("CGRAM can only contain 8 characters")
+        with self.lock:
+            self.command(0b01000000 & (index*8))
+            for i in charbytes:
+                self.write(i)
+            self.command(0b10000000)
+
     def init(self,bl=False):
-        super().init(True)
+        with self.lock:
+            super().init(True)
+            
+            self.__write4(0b0011) # Set to 8 bit mode
+            self.__write4(0b0011) # Again, in case in 4 bit mode
+            self.__write4(0b0010) # Set to 4 bit mode in 8 bit mode
 
-        self.__write4(0b0011) # Set to 8 bit mode
-        self.__write4(0b0011) # Again, in case in 4 bit mode
-        self.__write4(0b0010) # Set to 4 bit mode in 8 bit mode
+            self.set_init()
 
-        self.set_init()
+            delay(500)
+            self.command(0b00101000) # Set to use max number of lines and font 0
+            delay(100)
+            self.clear()
 
-        delay(500)
-        self.command(0b00101000) # Set to use max number of lines and font 0
-        self.clear()
-
-        self.lit = bl
+            self.lit = bl
 
     def cleanup(self,quiet=False):
-        if self._checkInit(quiet):
-            self.enabled = False
-        super().cleanup()
+        with self.lock:
+            try:
+                self.enabled = False
+            except RuntimeError as err:
+                pass
+            super().cleanup()
         
     def __enter__(self):
         self.init()
@@ -166,6 +184,7 @@ class ManagedDisplay(Display):
     def __init__(self,*args,**kwargs):
         super().__init__(*args,**kwargs)
         self._contents = [[" " for j in range(COLS)] for i in range(ROWS)]
+        self.insertion_lock = threading.RLock()
         
     def move(self,row,col):
         if 0 > col > COLS-1:
@@ -176,22 +195,23 @@ class ManagedDisplay(Display):
             raise ValueError("Invalid row ({})".format(row))
 
     def insert(self,row,col,contents,clear=False,wrap=False):
-        if clear:
-            self.clearRow(row)
-        self.move(row,col)
-        for i in contents:
-            if col > COLS-1:
-                if wrap:
-                    col = 0
-                    row += 1
-                    if clear:
-                        self.clearRow(row)
-                    self.move(row,col)
-                else:
-                    return False
-            self.printString(i)
-            self._contents[row][col] = i
-            col += 1
+        with self.insertion_lock:
+            if clear:
+                self.clearRow(row)
+            self.move(row,col)
+            for i in contents:
+                if col > COLS-1:
+                    if wrap:
+                        col = 0
+                        row += 1
+                        if clear:
+                            self.clearRow(row)
+                        self.move(row,col)
+                    else:
+                        return False
+                self.printString(i)
+                self._contents[row][col] = i
+                col += 1
         return True
 
     def clearRow(self,row):
@@ -216,12 +236,15 @@ class Row():
     def __init__(self,row):
         self.enabled = False
         self.row = row
+        self.original_contents = ""
         self.contents = ""
         self.pos = 0
 
     def setContents(self,val,pad=True):
+        self.original_contents = val
+        val = str(val)
         if len(val) > COLS:
-            self.contents = " " + val + " "
+            self.contents = " " + val + "  "
         elif pad:
             self.contents = " " * int((COLS-len(val))/2) + val
         else:
@@ -232,24 +255,25 @@ class AnimatedDisplay(ManagedDisplay):
     def __init__(self,*args,**kwargs):
         super().__init__(*args,**kwargs)
         self.rows = [Row(i) for i in range(ROWS)]
-        self.paused_event = threading.Event()
         self._loading_stopper = None
+        self._done_stopping_load = threading.Event()
+        self.animation_lock = threading.RLock()
         self.thread = threading.Thread(target=self._animateRows)
         self.thread.daemon = True
         self.thread.start()
 
     def _animateRows(self):
         while True:
-            for i in self.rows:
-                if len(i.contents) > COLS and i.enabled:
-                    part = i.contents[i.pos:min(i.pos+COLS,len(i.contents))]
-                    part += i.contents[:COLS-len(part)]
-                    self.insert(i.row,0,part,True)
-                    i.pos += 1
-                    if i.pos > len(i.contents):
-                        i.pos = i.pos % len(i.contents) - 1
-            self.paused_event.set()
-            time.sleep(0.5)
+            with self.animation_lock:
+                for i in self.rows:
+                    if len(i.contents) > COLS and i.enabled:
+                        part = i.contents[i.pos:min(i.pos+COLS,len(i.contents))]
+                        part += i.contents[:COLS-len(part)]
+                        self.insert(i.row,0,part,True)
+                        i.pos += 1
+                        if i.pos > len(i.contents):
+                            i.pos = i.pos % len(i.contents) - 1
+            time.sleep(0.25)
 
     def displayLoadingAnimation(self,row=1):
         if self._loading_stopper:
@@ -260,7 +284,12 @@ class AnimatedDisplay(ManagedDisplay):
         thread.daemon = True
         self._loading_stopper = event.set
         thread.start()
-        return event.set
+
+    def stopLoadingAnimation(self):
+        if self._loading_stopper:
+            self._loading_stopper()
+            self._done_stopping_load.wait()
+            self._done_stopping_load.clear()
 
     def __displayLoadingAnimation(self,row,event):
         try:
@@ -272,29 +301,45 @@ class AnimatedDisplay(ManagedDisplay):
                     wait_with_event(.5,event)
                 wait_with_event(.5,event)
         except Done:
-            self.insert(row,8,"Done",True)
+            try:
+                self.insert(row,8,"Done",True)
+            except RuntimeError as err:
+                pass
             self._loading_stopper = None
+            self._done_stopping_load.set()
 
     def animateRow(self,row,content):
-        self.stopRow(row)
+        if self.rows[row].original_contents == content:
+            return False
+        self.stopRow(row,skip_reprint=True)
         self.rows[row].setContents(content)
-        self.insert(row,0,self.rows[row].contents,True)
+        if len(self.rows[row].contents) <= COLS:
+            self.insert(row,0,self.rows[row].contents,True)
         self.rows[row].enabled = True
 
-    def stopRow(self,row,clear=False):
+    def stopRow(self,row,clear=False,skip_reprint=False):
         self.rows[row].enabled = False
-        self.paused_event.clear()
-        self.paused_event.wait()
-        if clear:
-            self.insert(row,0,"",True)
-        else:
-            self.insert(row,0,self.rows[row].contents,True)
+        if not skip_reprint:
+            with self.animation_lock:
+                if clear:
+                    self.insert(row,0,"",True)
+                else:
+                    if len(self.rows[row].contents) > COLS:
+                        self.insert(row,0,self.rows[row].contents[:COLS-3]+"...",True)
+
+    def stopRows(self,*rows,clear=False):
+        with self.animation_lock:
+            for i in rows:
+                self.stopRow(i,clear)
 
     def cleanup(self,*args,**kwargs):
-        if self._loading_stopper:
-            self._loading_stopper()
-        for i in range(ROWS):
-            self.stopRow(i,True)
+        if self._checkInit(True):
+            try:
+                if self._loading_stopper:
+                    self._loading_stopper()
+                self.stopRows(1,2,3,4,clear=True)
+            except RuntimeError as err:
+                pass # print("Warning (RuntimeError):",err,file=sys.stderr)
         super().cleanup(*args,**kwargs)
 
 if __name__ == "__main__":

@@ -24,7 +24,8 @@ D = 8  # TXD
 class RFReceiver(Component):
     def __init__(self,a=A,b=B,c=C,d=D):
         self.pins = (a, b, c, d)
-        self.handlers = defaultdict(list)
+        self.handlers = defaultdict(dict)
+        self.__next_id = -1
         super().__init__(inpins=self.pins)
 
     def init(self):
@@ -39,15 +40,23 @@ class RFReceiver(Component):
         super().cleanup()
 
     def _handle_pin(self,pin):
-        for i in self.handlers["generic"]:
+        for i in self.handlers["generic"].values():
             i(pin)
-        for i in self.handlers[pin]:
+        for i in self.handlers[pin].values():
             i(pin)
 
-    def add_handler(self,callback,pin=None,generic=False):
-        if not (pin or generic):
+    def __get_handlers(self,pin=None,generic=False):
+        if (pin is None) and (not generic):
             raise TypeError("Must supply pin for non generic handler!")
-        (self.handlers["generic"] if generic else self.handlers[pin]).append(callback)
+        return self.handlers["generic"] if generic else self.handlers[pin]
+
+    def add_handler(self,callback,pin=None,generic=False):
+        self.__next_id += 1
+        self.__get_handlers(pin,generic)[self.__next_id] = callback
+        return self.__next_id
+
+    def remove_handler(self,hid,pin=None,generic=False):
+        del self.__get_handlers(pin,generic)[hid]
 
 if __name__ == "__main__":
     def echo(pin):

@@ -42,6 +42,8 @@ class Component:
         self.__initialized = True
 
     def cleanup(self):
+        if not self.__initialized:
+            return False
         self.__initialized = False
         for ch in self.__out_pins + self.__in_pins:
             gpio.cleanup(ch)
