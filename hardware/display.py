@@ -262,9 +262,7 @@ class AnimatedDisplay(ManagedDisplay):
         self._loading_stopper = None
         self._done_stopping_load = threading.Event()
         self.animation_lock = threading.RLock()
-        self.thread = threading.Thread(target=self._animateRows,name="RowAnimationThread")
-        self.thread.daemon = True
-        self.thread.start()
+        self.thread = None
 
     def displayLoadingAnimation(self,row=1):
         self.__load_error = False
@@ -310,9 +308,13 @@ class AnimatedDisplay(ManagedDisplay):
             return False
         self.stopRow(row,skip_reprint=True)
         self.rows[row].setContents(content)
-        if True or len(self.rows[row].contents) <= COLS:
+        if len(self.rows[row].contents) <= COLS:
             self.insert(row,0,self.rows[row].contents,clear)
         self.rows[row].enabled = True
+        if not self.thread or not self.thread.is_alive():
+            self.thread = threading.Thread(target=self._animateRows,name="RowAnimationThread")
+            self.thread.daemon = True
+            self.thread.start()
         return True
 
     def stopRow(self,row,clear=False,skip_reprint=False):
@@ -336,12 +338,8 @@ class AnimatedDisplay(ManagedDisplay):
     def _animateRows(self):
         try:
             while True:
-                print("Animating...")
                 with self.animation_lock:
-                    print("Has lock")
                     for i in self.rows:
-                        if i.enabled:
-                            print(i.contents)
                         if len(i.contents) > COLS and i.enabled:
                             part = i.contents[i.pos:min(i.pos+COLS,len(i.contents))]
                             part += i.contents[:COLS-len(part)]
@@ -349,9 +347,7 @@ class AnimatedDisplay(ManagedDisplay):
                             i.pos += 1
                             if i.pos > len(i.contents):
                                 i.pos = i.pos % len(i.contents) - 1
-                print("Released lock")
                 time.sleep(0.25)
-                print("Done sleeping...")
         except BaseException as err:
             print(repr(err))
 

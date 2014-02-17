@@ -94,7 +94,6 @@ class HomeCtrl:
     def __main(self):
         self.display.lit = True
         write_custom_chars(self.display)
-
         
         while len(self.players) < 1:
             try:
@@ -160,7 +159,7 @@ class HomeCtrl:
                 self.current_info = info
                 self.current_transport_state = status["current_transport_state"]
                 active_threads = threading.enumerate()
-                if len(active_threads) > 1:
+                if False and len(active_threads) > 1:
                     print(active_threads)
                 time.sleep(0.5)
             except Exception as err:
