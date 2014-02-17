@@ -202,7 +202,7 @@ class ManagedDisplay(Display):
                 self.clearRow(row)
             self.move(row,col)
             for i in contents:
-                if col > COLS-1:
+                if col > COLS-1 or i == "\n":
                     if wrap:
                         col = 0
                         row += 1
@@ -262,22 +262,9 @@ class AnimatedDisplay(ManagedDisplay):
         self._loading_stopper = None
         self._done_stopping_load = threading.Event()
         self.animation_lock = threading.RLock()
-        self.thread = threading.Thread(target=self._animateRows)
+        self.thread = threading.Thread(target=self._animateRows,name="RowAnimationThread")
         self.thread.daemon = True
         self.thread.start()
-
-    def _animateRows(self):
-        while True:
-            with self.animation_lock:
-                for i in self.rows:
-                    if len(i.contents) > COLS and i.enabled:
-                        part = i.contents[i.pos:min(i.pos+COLS,len(i.contents))]
-                        part += i.contents[:COLS-len(part)]
-                        self.insert(i.row,0,part,True)
-                        i.pos += 1
-                        if i.pos > len(i.contents):
-                            i.pos = i.pos % len(i.contents) - 1
-            time.sleep(0.25)
 
     def displayLoadingAnimation(self,row=1):
         self.__load_error = False
@@ -285,7 +272,8 @@ class AnimatedDisplay(ManagedDisplay):
             self._loading_stopper()
         self.insert(row,5,"Loading",True)
         event = threading.Event()
-        thread = threading.Thread(target=self.__displayLoadingAnimation,args=(row,event))
+        thread = threading.Thread(target=self.__displayLoadingAnimation,args=(row,event),
+                                  name="LoadingAnimationThread")
         thread.daemon = True
         self._loading_stopper = event.set
         thread.start()
@@ -317,13 +305,13 @@ class AnimatedDisplay(ManagedDisplay):
             self._loading_stopper = None
             self._done_stopping_load.set()
 
-    def animateRow(self,row,content):
+    def animateRow(self,row,content,clear=True):
         if self.rows[row].original_contents == content:
             return False
         self.stopRow(row,skip_reprint=True)
         self.rows[row].setContents(content)
-        if len(self.rows[row].contents) <= COLS:
-            self.insert(row,0,self.rows[row].contents,True)
+        if True or len(self.rows[row].contents) <= COLS:
+            self.insert(row,0,self.rows[row].contents,clear)
         self.rows[row].enabled = True
         return True
 
@@ -345,6 +333,28 @@ class AnimatedDisplay(ManagedDisplay):
             for i in rows:
                 self.stopRow(i,clear)
 
+    def _animateRows(self):
+        try:
+            while True:
+                print("Animating...")
+                with self.animation_lock:
+                    print("Has lock")
+                    for i in self.rows:
+                        if i.enabled:
+                            print(i.contents)
+                        if len(i.contents) > COLS and i.enabled:
+                            part = i.contents[i.pos:min(i.pos+COLS,len(i.contents))]
+                            part += i.contents[:COLS-len(part)]
+                            self.insert(i.row,0,part,True)
+                            i.pos += 1
+                            if i.pos > len(i.contents):
+                                i.pos = i.pos % len(i.contents) - 1
+                print("Released lock")
+                time.sleep(0.25)
+                print("Done sleeping...")
+        except BaseException as err:
+            print(repr(err))
+
     def cleanup(self,*args,**kwargs):
         if self._checkInit(True):
             try:
@@ -358,4 +368,4 @@ class AnimatedDisplay(ManagedDisplay):
 if __name__ == "__main__":
     with Display() as display:
         display.printString("Hello World")
-        delay(1000000)
+        time.sleep(1)
