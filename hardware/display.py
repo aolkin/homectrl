@@ -343,11 +343,11 @@ class AnimatedDisplay(ManagedDisplay):
                         if len(i.contents) > COLS and i.enabled:
                             part = i.contents[i.pos:min(i.pos+COLS,len(i.contents))]
                             part += i.contents[:COLS-len(part)]
-                            self.insert(i.row,0,part,True)
-                            i.pos += 1
+                            self.insert(i.row,0,part)
+                            i.pos += 3
                             if i.pos > len(i.contents):
                                 i.pos = i.pos % len(i.contents) - 1
-                time.sleep(0.25)
+                time.sleep(0.5)
         except BaseException as err:
             print(repr(err))
 

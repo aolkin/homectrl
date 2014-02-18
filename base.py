@@ -38,9 +38,6 @@ def get_wifi_status():
     except CalledProcessError as err:
         wifi_str = err.output
     wifi_lines = wifi_str.split("\n")
-    fd = open("tmp.txt","a")
-    fd.write(wifi_str+"\n\n")
-    fd.close()
     wifi_dict = {}
     for i in wifi_lines:
         line = i.rpartition("=")
