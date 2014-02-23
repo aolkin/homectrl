@@ -16,10 +16,10 @@ try:
 except ValueError:
     from component import Component
 
-A = 26 # CE1
-B = 24 # CE0
-C = 10 # RXD
-D = 8  # TXD
+A = 8  # TXD
+B = 10 # RXD
+C = 24 # CE0
+D = 26 # CE1
 
 class RFReceiver(Component):
     def __init__(self,a=A,b=B,c=C,d=D):
@@ -31,7 +31,7 @@ class RFReceiver(Component):
     def init(self):
         super().init()
         for n, i in enumerate(self.pins):
-            gpio.add_event_detect(i, gpio.RISING, bouncetime=100,
+            gpio.add_event_detect(i, gpio.RISING, bouncetime=500,
                                   callback=lambda x,n=n: self._handle_pin(n))
 
     def cleanup(self):

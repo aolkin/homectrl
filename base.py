@@ -74,7 +74,10 @@ class HomeCtrl:
             self.current_player = 0
         name = sorted(self.players.keys())[self.current_player]
         self.player = self.players[name]
-        self.display.animateRow(1,name)
+        self.display.animateRow(0,name)
+
+    def select_player(self,*args):
+        self.player_selected = True
 
     def playpause(self,*args,noaction=False):
         if self.player.get_current_transport_info()["current_transport_state"] != "PLAYING":
@@ -84,6 +87,26 @@ class HomeCtrl:
         else:
             if not noaction:
                 self.player.pause()
+
+    def skip(self,ch):
+        self.player.next()
+
+    def volume(self,ch):
+        vol = self.player.volume
+        if ch == 1:
+            vol += 5
+        elif ch == 3:
+            vol -= 5
+        self.player.volume = vol
+        self.display.insert(3,0,"Vol " + "\xff"*round(vol/6) + " "*(16-round(vol/6)))
+
+        if getattr(self,"volume_timer",None):
+            self.volume_timer.cancel()
+        self.volume_timer = threading.Timer(2,lambda s=self:
+                                                s.display.insert(
+                3,0," " + STATUS_CHARACTERS[self.current_transport_state] + " " +
+                s.current_info.get("position") + " / " + s.current_info.get("duration")))
+        self.volume_timer.start()
 
     def __darken_display(self):
         self.display.lit = False
@@ -110,23 +133,32 @@ class HomeCtrl:
                 self.display.insert(0,0," "*20*4,wrap=True)
 
         nextbtn = self.rf.add_handler(self.next_player,0)
+        selectbtn = self.rf.add_handler(self.select_player,1)
+        self.player_selected = False
         self.display.stopLoadingAnimation()
-        self.display.animateRow(2,"Press to change")
-        self.display.animateRow(3,"Wait to select")
+        self.display.clearRow(1)
+        self.display.animateRow(2,"A to change")
+        self.display.animateRow(3,"B to select")
         self.next_player()
-        while time.time()-self.lastPressTime < 5:
-            time.sleep(0.5)
+        while self.player_selected == False:
+            time.sleep(0.1)
             
         self.rf.remove_handler(nextbtn,0)
+        self.rf.remove_handler(selectbtn,1)
         self.display.stopRows(2,3,clear=True)
         coordinator = self.player.get_group_coordinator(self.player.player_name)
         if self.player.speaker_ip != coordinator:
             self.player = SoCo(coordinator)
+        self.display.clearRow(0)
         self.display.animateRow(1,"Selected:")
         self.display.animateRow(2,self.player.player_name)
         time.sleep(1)
 
         self.rf.add_handler(self.playpause,0)
+        self.rf.add_handler(self.volume,1)
+        self.rf.add_handler(self.volume,3)
+        self.rf.add_handler(self.skip,2)
+
         self.go = True
         self.current_info = {}
         self.current_transport_state = None
@@ -139,13 +171,12 @@ class HomeCtrl:
                 for n, i in enumerate(("title","artist","album")):
                     if self.display.rows[n].original_contents != info[i]:
                         self.display.animateRow(n,info[i])
-                if (self.current_info.get("duration") != info["duration"] or
-                    self.current_info.get("position") != info["position"] or
-                    self.current_transport_state != status["current_transport_state"]):
-                    status_msg = (" " + STATUS_CHARACTERS[status["current_transport_state"]] +
-                                  " " + info["position"] + " / " + info["duration"])
-                    self.display.animateRow(3,status_msg)
+                if self.current_info.get("duration") != info["duration"]:
+                    self.display.insert(3,11,"/ " + info["duration"])
+                if self.current_info.get("position") != info["position"]:
+                    self.display.insert(3,3,info["position"])
                 if self.current_transport_state != status["current_transport_state"]:
+                    self.display.insert(3,0," "+STATUS_CHARACTERS[status["current_transport_state"]]+" ")
                     if getattr(self,"display_timer",None):
                         self.display_timer.cancel()
                     if status["current_transport_state"] in (PAUSED,STOPPED):
