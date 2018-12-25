@@ -1,7 +1,7 @@
 
 from . import *
 
-import soco, time, sys, traceback
+import soco, time, sys, traceback, collections
 
 PLAYING = "PLAYING"
 PAUSED  = "PAUSED_PLAYBACK"
@@ -31,6 +31,9 @@ class PlayerSelection(Menu):
         self.display.stopLoadingAnimation()
         return self.players
 
+    def get_keys(self, options):
+        return list(sorted(options))
+    
     def selected(self, player):
         return PlayerMenu(player, self.display)
 
@@ -38,11 +41,21 @@ class PlayerMenu(Menu):
     def __init__(self, player, *args):
         super().__init__(*args)
         self.__player = player
+
+    def selected(self, option):
+        if callable(option):
+            option()
+            return self
+        return super().selected(option)
         
     def get_options(self):
-        return {
-            "Now Playing" : NowPlaying(self.__player, self.display)
-        }
+        return collections.OrderedDict((
+            ("Now Playing ({})".format(
+                self.__player.player_name), NowPlaying(
+                    self.__player, self.display)),
+            ("Next Track", (lambda p=self.__player: p.next())),
+            ("Previous Track", (lambda p=self.__player: p.previous()))
+        ))
 
 class NowPlaying(Screen):
     def __init__(self, player, *args):

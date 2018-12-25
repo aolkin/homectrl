@@ -71,9 +71,12 @@ class Menu(Screen):
     def selected(self, option):
         return option
 
+    def get_keys(self, options):
+        return list(options.keys())
+    
     def make_menu(self):
         self.__options = self.get_options()
-        self.__keys = list(sorted(self.__options.keys()))
+        self.__keys = self.get_keys(self.__options)
         self.__selected = 0
         self.__displayed = 0
 
@@ -89,9 +92,13 @@ class Menu(Screen):
             for i in range(4):
                 if self.__selected % 4 != i:
                     self.display.clearRow(i)
-            time.sleep(0.5)
-            return self.selected(
+            #time.sleep(0.5)
+            ns = self.selected(
                 self.__options[self.__keys[self.__selected]])
+            if ns == self:
+                self.draw_items()
+                self.draw_cursor()
+            return ns
         elif button == BACK:
             return None
         return self
