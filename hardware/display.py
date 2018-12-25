@@ -16,7 +16,7 @@ import time, threading, sys
 
 try:
     from .component import Component, delay
-except ValueError:
+except SystemError:
     from component import Component, delay
 
 RS = 18 # 24
@@ -220,6 +220,9 @@ class ManagedDisplay(Display):
 
     def clearRow(self,row):
         self.insert(row,0," "*COLS,False,False)
+
+    def getRow(self,row):
+        return "".join(self._contents[row])
 
     def __str__(self):
         return "\n".join(["".join(l) for l in self._contents])

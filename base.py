@@ -3,13 +3,13 @@
 # Base script for the controller
 #
 
-import time, os, sys, threading, socket
+import time, os, sys, threading, socket, traceback
 
 from subprocess import check_output, STDOUT, CalledProcessError
 
 from hardware import RFReceiver, AnimatedDisplay
 
-from soco import SoCo, SonosDiscovery
+from soco import SoCo, discover
 
 PLAYING = "PLAYING"
 PAUSED  = "PAUSED_PLAYBACK"
@@ -51,20 +51,14 @@ class HomeCtrl:
     def __init__(self):
         self.display = AnimatedDisplay()
         self.rf = RFReceiver()
-        self.sd = SonosDiscovery()
 
         self.players = {}
         self.current_player = -1
 
     def get_sonos_players(self):
         self.players = {}
-        sonos_ips = self.sd.get_speaker_ips()
-        for i in sonos_ips:
-            try:
-                soco = SoCo(i)
-                self.players[soco.player_name] = soco
-            except Exception as err:
-                print(repr(err))
+        for i in discover():
+            self.players[i.player_name] = i
         return self.players
 
     def next_player(self,*args):
@@ -146,9 +140,7 @@ class HomeCtrl:
         self.rf.remove_handler(nextbtn,0)
         self.rf.remove_handler(selectbtn,1)
         self.display.stopRows(2,3,clear=True)
-        coordinator = self.player.get_group_coordinator(self.player.player_name)
-        if self.player.speaker_ip != coordinator:
-            self.player = SoCo(coordinator)
+        self.player = self.player.group.coordinator
         self.display.clearRow(0)
         self.display.animateRow(1,"Selected:")
         self.display.animateRow(2,self.player.player_name)
@@ -173,7 +165,8 @@ class HomeCtrl:
                         self.display.animateRow(n,info[i])
                 if self.current_info.get("duration") != info["duration"]:
                     self.display.insert(3,11,"/ " + info["duration"])
-                if self.current_info.get("position") != info["position"]:
+                if ((not self.display.getRow(3).startswith("Vol")) and
+                    self.current_info.get("position") != info["position"]):
                     self.display.insert(3,3,info["position"])
                 if self.current_transport_state != status["current_transport_state"]:
                     self.display.insert(3,0," "+STATUS_CHARACTERS[status["current_transport_state"]]+" ")
@@ -191,9 +184,11 @@ class HomeCtrl:
                     print(active_threads)
                 time.sleep(0.5)
             except Exception as err:
-                #print(repr(err),file=sys.stderr)
+                print(repr(err),file=sys.stderr)
+                traceback.print_exc(file=sys.stdout)
                 self.display.animateRow(3,repr(err))
                 time.sleep(10)
+                self.display.stopRow(3,clear=True)
 
     def main(self):
         with self.display, self.rf:
@@ -209,7 +204,7 @@ class HomeCtrl:
             hc.main()
         else:
             if os.fork() == 0:
-                #os.nice(-5)
+                os.nice(-15)
                 hc.main()
             else:
                 return hc

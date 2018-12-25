@@ -33,7 +33,7 @@ class Component:
         for ch in self.__out_pins:
             gpio.setup(ch, gpio.OUT, initial=gpio.LOW)
         for ch in self.__in_pins:
-            gpio.setup(ch, gpio.IN, initial=gpio.LOW)
+            gpio.setup(ch, gpio.IN)
 
         if not wait_set_init:
             self.__initialized = True

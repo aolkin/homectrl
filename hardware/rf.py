@@ -13,7 +13,7 @@ from collections import defaultdict
 
 try:
     from .component import Component
-except ValueError:
+except SystemError:
     from component import Component
 
 A = 8  # TXD
