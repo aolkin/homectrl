@@ -7,6 +7,9 @@ import time, os, sys
 
 from hardware import RFReceiver, AnimatedDisplay
 
+from screens import Manager
+import screens.sonos as sonos
+
 if __name__ == "__main__":
     if os.geteuid() != 0:
         print("Must be run as root!",file=sys.stderr)

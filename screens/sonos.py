@@ -1,5 +1,5 @@
 
-from .screens import *
+from . import *
 
 import soco, time, sys, traceback
 
@@ -40,21 +40,29 @@ class PlayerMenu(Menu):
         self.__player = player
         
     def get_options(self):
-        return { "Now Playing" : NowPlaying(self.__player, self.display) }
+        return {
+            "Now Playing" : NowPlaying(self.__player, self.display)
+        }
 
 class NowPlaying(Screen):
     def __init__(self, player, *args):
         super().__init__(*args)
         self.__player = player.group.coordinator
-        self.__info = {}
-        self.__state = None
 
         self.__volume_time = None
         self.__play_time = 0
+        self.__tick_time = 0
 
     def enter(self):
         write_custom_chars(self.display)
+        self.__info = {}
+        self.__state = None
         super().enter()
+
+    def exit(self):
+        for i in range(3):
+            self.display.stopRow(i, skip_reprint=True)
+        super().exit()
         
     def input(self, button):
         if button in ARROWS:
@@ -69,9 +77,9 @@ class NowPlaying(Screen):
         elif button == A:
             if self.__player.get_current_transport_info()["current_transport_state"] != "PLAYING":
                 self.display.lit = True
-                self.player.play()
+                self.__player.play()
             else:
-                self.player.pause()
+                self.__player.pause()
         elif button == MENU:
             return None
         return self
@@ -81,11 +89,12 @@ class NowPlaying(Screen):
         if self.__tick_time + 0.5 > tt:
             return self
         try:
-            info = self.player.get_current_track_info()
-            status = self.player.get_current_transport_info()
+            info = self.__player.get_current_track_info()
+            status = self.__player.get_current_transport_info()
             for n, i in enumerate(("title","artist","album")):
-                if self.display.rows[n].original_contents != info[i]:
+                if self.__info.get(i) != info[i]:
                     self.display.animateRow(n,info[i])
+                    self.__info[i] = info[i]
             if self.__volume_time:
                 if self.__volume_time + 2 < tt:
                     self.draw_status()
@@ -95,7 +104,7 @@ class NowPlaying(Screen):
             else:
                 if self.__info.get("duration") != info["duration"]:
                     self.draw_duration(info["duration"])
-                if self.__info.get("position") != info["position"]):
+                if self.__info.get("position") != info["position"]:
                     self.draw_position(info["position"])
                 if self.__state != status["current_transport_state"]:
                     self.draw_state(status["current_transport_state"])
@@ -105,7 +114,6 @@ class NowPlaying(Screen):
             else:
                 self.__play_time = tt
                 self.display.lit = True
-            self.__info = info
             self.__tick_time = tt
         except Exception as err:
             print(repr(err),file=sys.stderr)

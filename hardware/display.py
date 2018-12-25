@@ -317,10 +317,9 @@ class AnimatedDisplay(ManagedDisplay):
             self._done_stopping_load.set()
 
     def animateRow(self,row,content,clear=True):
-        if self.rows[row].original_contents == content:
-            return False
-        self.stopRow(row,skip_reprint=True)
-        self.rows[row].setContents(content)
+        if self.rows[row].original_contents != content:
+            self.stopRow(row,skip_reprint=True)
+            self.rows[row].setContents(content)
         if len(self.rows[row].contents) <= COLS:
             self.insert(row,0,self.rows[row].contents,clear)
         self.rows[row].enabled = True

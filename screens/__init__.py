@@ -22,13 +22,13 @@ class Manager:
         return (self.screens or None) and self.screens[-1]
         
     def launch(self, screen):
-        assert len(screens) == 0
-        self.screens.append(screen)
+        assert len(self.screens) == 0
         with self.display, self.rf:
+            self.update(screen)
             while self.screen:
                 self.update(self.screen.tick())
                 try:
-                    while True:
+                    while self.screen:
                         pin = self.events.get_nowait()
                         self.update(self.screen.input(pin))
                 except queue.Empty:
@@ -37,12 +37,12 @@ class Manager:
 
     def update(self, ns):
         if ns != self.screen:
-            self.screen.exit()
+            self.screen and self.screen.exit()
             if ns is None:
                 self.screens.pop()
             else:
-                self.screens.push(ns)
-            self.screen.enter()
+                self.screens.append(ns)
+            self.screen and self.screen.enter()
 
 class Screen:
     def __init__(self, dis):
@@ -73,26 +73,26 @@ class Menu(Screen):
 
     def make_menu(self):
         self.__options = self.get_options()
-        self.__keys = list(self.__options.keys())
+        self.__keys = list(sorted(self.__options.keys()))
         self.__selected = 0
         self.__displayed = 0
 
-    def input(self):
-        if pin in ARROWS:
-            self.__selected += 1 if pin == DOWN else -1
+    def input(self, button):
+        if button in ARROWS:
+            self.__selected += 1 if button == DOWN else -1
             self.__selected = self.__selected % len(self.__keys)
             if (self.__selected // 4) != (self.__displayed // 4):
                 self.draw_items()
             if self.__selected != self.__displayed:
                 self.draw_cursor()
-        elif pin == SELECT:
+        elif button == SELECT:
             for i in range(4):
                 if self.__selected % 4 != i:
                     self.display.clearRow(i)
             time.sleep(0.5)
             return self.selected(
                 self.__options[self.__keys[self.__selected]])
-        elif pin == BACK:
+        elif button == BACK:
             return None
         return self
 
@@ -103,7 +103,7 @@ class Menu(Screen):
         self.draw_cursor()
 
     def draw_items(self):
-        index = self.__selected // 4
+        index = (self.__selected // 4) * 4
         for i in range(4):
             if index + i + 1 > len(self.__keys):
                 self.display.clearRow(i)
