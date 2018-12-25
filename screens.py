@@ -1,10 +1,11 @@
 
-import queue
+import queue, time
 
 A = SELECT = OK = 0
 B = PREV = UP   = 1
 C = MENU = BACK = 2
 D = NEXT = DOWN = 3
+ARROWS = (UP, DOWN)
 
 class Manager:
     def __init__(self, dis, rf):
@@ -23,15 +24,16 @@ class Manager:
     def launch(self, screen):
         assert len(screens) == 0
         self.screens.append(screen)
-        while self.screen:
-            self.update(self.screen.tick())
-            try:
-                while True:
-                    pin = self.events.get_nowait()
-                    self.update(self.screen.input(pin))
-            except queue.Empty:
-                pass
-            time.sleep(0.5)
+        with self.display, self.rf:
+            while self.screen:
+                self.update(self.screen.tick())
+                try:
+                    while True:
+                        pin = self.events.get_nowait()
+                        self.update(self.screen.input(pin))
+                except queue.Empty:
+                    pass
+                time.sleep(0.1)
 
     def update(self, ns):
         if ns != self.screen:
@@ -57,20 +59,17 @@ class Screen:
         return self
 
     def enter(self):
-        pass
+        self.display.lit = True
 
     def exit(self):
-        pass
+        self.display.enabled = False
     
 class Menu(Screen):
-    def __init__(self, *args):
-        super().__init__(*args)
-        
     def get_options(self):
         return {}
 
     def selected(self, option):
-        raise NotImplemented()
+        return option
 
     def make_menu(self):
         self.__options = self.get_options()
@@ -79,7 +78,7 @@ class Menu(Screen):
         self.__displayed = 0
 
     def input(self):
-        if pin in (UP, DOWN):
+        if pin in ARROWS:
             self.__selected += 1 if pin == DOWN else -1
             self.__selected = self.__selected % len(self.__keys)
             if (self.__selected // 4) != (self.__displayed // 4):
@@ -90,12 +89,15 @@ class Menu(Screen):
             for i in range(4):
                 if self.__selected % 4 != i:
                     self.display.clearRow(i)
-            return self.selected(self.__keys[self.__selected])
+            time.sleep(0.5)
+            return self.selected(
+                self.__options[self.__keys[self.__selected]])
         elif pin == BACK:
             return None
         return self
 
     def enter(self):
+        super().enter()
         self.make_menu()
         self.draw_items()
         self.draw_cursor()
