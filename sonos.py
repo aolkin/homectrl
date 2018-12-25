@@ -1,7 +1,26 @@
 
 from .screens import *
 
-import soco, time
+import soco, time, sys, traceback
+
+PLAYING = "PLAYING"
+PAUSED  = "PAUSED_PLAYBACK"
+STOPPED = "STOPPED"
+TRANSITIONING = "TRANSITIONING"
+
+STATUS_CHARACTERS = {
+    PLAYING: chr(1),
+    PAUSED: chr(2),
+    STOPPED: chr(3),
+    TRANSITIONING: chr(4)
+}
+
+def write_custom_chars(display):
+    display.writeChar(*[0x00 for i in range(8)], index=0)
+    display.writeChar(0x08,0x0c,0x0e,0x0f,0x0e,0x0c,0x08,0x00, index=1)
+    display.writeChar(0x1b,0x1b,0x1b,0x1b,0x1b,0x1b,0x1b,0x00, index=2)
+    display.writeChar(0x00,0x1f,0x1f,0x1f,0x1f,0x1f,0x00,0x00, index=3)
+    display.writeChar(0x00,0x0e,0x1f,0x1f,0x1f,0x0e,0x00,0x00, index=4)
 
 class PlayerSelection(Menu):        
     def get_options(self):
@@ -33,6 +52,10 @@ class NowPlaying(Screen):
         self.__volume_time = None
         self.__play_time = 0
 
+    def enter(self):
+        write_custom_chars(self.display)
+        super().enter()
+        
     def input(self, button):
         if button in ARROWS:
             vol = self.__player.volume
