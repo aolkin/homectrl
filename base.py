@@ -62,7 +62,6 @@ class HomeCtrl:
         return self.players
 
     def next_player(self,*args):
-        self.lastPressTime = time.time()
         self.current_player += 1
         if self.current_player >= len(self.players):
             self.current_player = 0
@@ -164,7 +163,7 @@ class HomeCtrl:
                     if self.display.rows[n].original_contents != info[i]:
                         self.display.animateRow(n,info[i])
                 if self.current_info.get("duration") != info["duration"]:
-                    self.display.insert(3,11,"/ " + info["duration"])
+                    self.display.insert(3,10," / " + info["duration"])
                 if ((not self.display.getRow(3).startswith("Vol")) and
                     self.current_info.get("position") != info["position"]):
                     self.display.insert(3,3,info["position"])

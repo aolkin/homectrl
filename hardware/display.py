@@ -12,7 +12,7 @@
 #
 
 import RPi.GPIO as gpio
-import time, threading, sys
+import time, threading, sys, atexit
 
 try:
     from .component import Component, delay
@@ -37,6 +37,15 @@ SHIFT_MASK = 0b00010000
 RIGHT = 0b0100
 LEFT  = 0b0000
 
+_displays = []
+
+def _kill_all():
+    for i in _displays:
+        if i._checkInit(True):
+            i.enabled = False
+
+atexit.register(_kill_all)
+
 class Display(Component):
     def __init__(self,rs=RS,en=EN,d7=D7,d6=D6,d5=D5,d4=D4,bl=BACKLIGHT):
         self.RS = rs
@@ -53,7 +62,8 @@ class Display(Component):
         self.__mode = 0b000
         self.__lit = False
         self._next_custom_char = 0
-
+        _displays.append(self)
+        
     @property
     def lit(self):
         return self.__lit
