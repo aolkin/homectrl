@@ -33,7 +33,7 @@ class Manager:
                         self.update(self.screen.input(pin))
                 except queue.Empty:
                     pass
-                time.sleep(0.1)
+                time.sleep(0.05)
 
     def update(self, ns):
         if ns != self.screen:
